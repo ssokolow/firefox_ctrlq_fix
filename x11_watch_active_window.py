@@ -1,8 +1,8 @@
 #!/usr/bin/env python
-"""python-xlib example which reacts to changing the active window.
+"""Proof of concept for blocking Ctrl+Q from Firefox windows.
 
-Based on my earlier example from
-https://gist.github.com/ssokolow/e7c9aae63fb7973e4d64cff969a78ae8
+(Works by using XGrabKey to claim Ctrl+Q on all Firefox windows, either at
+ startup or when the window first receives focus.)
 
 Requires:
 - Python
@@ -10,22 +10,20 @@ Requires:
 
 Tested with Python 2.x because my Kubuntu 14.04 doesn't come with python-xlib
 for Python 3.x.
-
-Design:
--------
-
-Any modern window manager that isn't horrendously broken maintains an X11
-property on the root window named _NET_ACTIVE_WINDOW.
-
-This listens for changes to it and then hides duplicate events
-so it only reacts to title changes once.
 """
 
-FIREFOX_WINCLASS = "Firefox"
+from __future__ import print_function
 
 from contextlib import contextmanager
-import Xlib
-from Xlib import X, display
+from itertools import chain, combinations
+import Xlib, Xlib.display
+from Xlib import X, XK
+
+__author__ = "Stephan Sokolow (deitarion/SSokolow)"
+__license__ = "MIT"
+
+KEY = ("q", X.ControlMask)
+FIREFOX_WINCLASS = "Firefox"
 
 # Connect to the X server and get the root window
 disp = Xlib.display.Display()
@@ -35,7 +33,19 @@ root = disp.screen().root
 NET_ACTIVE_WINDOW = disp.intern_atom('_NET_ACTIVE_WINDOW')
 NET_CLIENT_LIST = disp.intern_atom('_NET_CLIENT_LIST')
 
+KEYSYM = XK.string_to_keysym(KEY[0])
+KEYCODE = disp.keysym_to_keycode(KEYSYM)
+
 last_seen = {'xid': None}
+
+def vary_modmask(modmask, ignored_list):
+    """Produce all combinations of modifiers which must be grabbed to
+    effectively ignore the state of certain modifiers.
+    """
+    for ignored in chain.from_iterable(combinations(ignored_list, j)
+                                       for j in range(len(ignored_list) + 1)):
+        imask = reduce(lambda x, y: x | y, ignored, 0)
+        yield modmask | imask
 
 @contextmanager
 def window_obj(win_id):
@@ -49,16 +59,27 @@ def window_obj(win_id):
     yield window_obj
 
 def grab_key(window):
-    if not window:  # TODO: ...or already seen
+    """Grab the undesirable key on the given Windows if it's Firefox"""
+    if not window:
         return  # Allow null windows here for robustness and simple structure
 
     winclass = window.get_wm_class()
     if not (winclass and winclass[-1] == FIREFOX_WINCLASS):
         return  # Skip non-Firefox windows
 
-    print("TODO: Bind Ctrl+Q for new window if Firefox")
+    # To avoid the risk of an XID collision allowing data loss via Ctrl+Q,
+    # take advantage of the X server not complaining if we re-grab something
+    # we already grabbed.
+    #
+    # (In my stress tests, re-grabbing like this appears to not have any
+    #  harmful consequences as long as the X11 event queue is allowed to
+    #  flush properly.)
+    for modmask in vary_modmask(KEY[1], (X.Mod2Mask, X.LockMask)):
+        window.grab_key(KEYCODE, modmask, 1,
+                        X.GrabModeAsync, X.GrabModeAsync)
 
 def handle_xevent(event):
+    """Handler for X events which aims for minimal overhead"""
     # Ignore any unwanted events as quickly and efficiently as possible in
     # concert with setting event_mask.
     if event.type != Xlib.X.PropertyNotify or event.atom != NET_ACTIVE_WINDOW:

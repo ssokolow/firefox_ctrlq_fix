@@ -26,18 +26,31 @@ Run the ``firefox_ctrlq_fix.py`` script in the background.
 Mechanism
 =========
 
+Window Matching
+---------------
+
 The script finds Firefox windows in two ways:
 
 1. When first started, it queries ``_NET_CLIENT_LIST`` for a list of top-level
    application windows and then filters for ones with a ``WM_CLASS`` of
-   ``Firefox``.
+   ``Firefox``. (This catches the case where a Firefox window was already
+   focused when the script started in a more robust way than just manually
+   triggering the "active window changed" handler.)
 
 2. It registers itself to be notified when the ``_NET_ACTIVE_WINDOW`` property
    on the root window changes, then checks whether the newly focused window
    has ``Firefox`` as its ``WM_CLASS``.
 
+   (I *know* this works, while I only have
+   limited knowledge of the caveats involved in reacting to window creation.
+   If you actually have a situation where your Firefox windows are receiving
+   Ctrl+Q events without ever getting focused, poke me.)
+
 (I tested this as working to match both Firefox 52.6.0 ESR and Firefox Developer
 Edition 59.0b7 but haven't tested it against the unbranded builds.)
+
+Event Interception
+------------------
 
 The script blocks ``Ctrl+Q`` by calling ``XGrabKey`` on each Firefox window it
 finds for all four possible states that the Num Lock and Caps Lock keys may be

@@ -14,8 +14,10 @@ for Python 3.x.
 
 from __future__ import print_function
 
+import time
 from contextlib import contextmanager
 from itertools import chain, combinations
+
 import Xlib, Xlib.display
 from Xlib import X, XK
 
@@ -25,18 +27,6 @@ __license__ = "MIT"
 KEY = ("q", X.ControlMask)
 FIREFOX_WINCLASS = "Firefox"
 
-# Connect to the X server and get the root window
-disp = Xlib.display.Display()
-root = disp.screen().root
-
-# Prepare the property names we use so they can be fed into X11 APIs
-NET_ACTIVE_WINDOW = disp.intern_atom('_NET_ACTIVE_WINDOW')
-NET_CLIENT_LIST = disp.intern_atom('_NET_CLIENT_LIST')
-
-KEYSYM = XK.string_to_keysym(KEY[0])
-KEYCODE = disp.keysym_to_keycode(KEYSYM)
-
-last_seen = {'xid': None}
 
 def vary_modmask(modmask, ignored_list):
     """Produce all combinations of modifiers which must be grabbed to
@@ -48,61 +38,96 @@ def vary_modmask(modmask, ignored_list):
         yield modmask | imask
 
 @contextmanager
-def window_obj(win_id):
+def window_obj(win_id, display):
     """Simplify dealing with BadWindow (make it either valid or None)"""
     window_obj = None
     if win_id:
         try:
-            window_obj = disp.create_resource_object('window', win_id)
+            window_obj = display.create_resource_object('window', win_id)
         except Xlib.error.XError:
             pass
     yield window_obj
 
-def grab_key(window):
-    """Grab the undesirable key on the given Windows if it's Firefox"""
-    if not window:
-        return  # Allow null windows here for robustness and simple structure
+class KeyBlocker(object):  # pylint: disable=too-many-instance-attributes
+    """Encapsulation of the program to allow reconnect on failure"""
+    last_seen = None
 
-    winclass = window.get_wm_class()
-    if not (winclass and winclass[-1] == FIREFOX_WINCLASS):
-        return  # Skip non-Firefox windows
+    def __init__(self, key=KEY, winclass=FIREFOX_WINCLASS):
+        self.key = key
+        self.winclass = winclass
 
-    # To avoid the risk of an XID collision allowing data loss via Ctrl+Q,
-    # take advantage of the X server not complaining if we re-grab something
-    # we already grabbed.
-    #
-    # (In my stress tests, re-grabbing like this appears to not have any
-    #  harmful consequences as long as the X11 event queue is allowed to
-    #  flush properly.)
-    for modmask in vary_modmask(KEY[1], (X.Mod2Mask, X.LockMask)):
-        window.grab_key(KEYCODE, modmask, 1,
-                        X.GrabModeAsync, X.GrabModeAsync)
+        # Connect to the X server and get the root window
+        self.disp = Xlib.display.Display()
+        self.root = self.disp.screen().root
 
-def handle_xevent(event):
-    """Handler for X events which aims for minimal overhead"""
-    # Ignore any unwanted events as quickly and efficiently as possible in
-    # concert with setting event_mask.
-    if event.type != Xlib.X.PropertyNotify or event.atom != NET_ACTIVE_WINDOW:
-        return
+        self.keysym = XK.string_to_keysym(self.key[0])
+        self.keycode = self.disp.keysym_to_keycode(self.keysym)
 
-    win_id = root.get_full_property(NET_ACTIVE_WINDOW,
-                                    Xlib.X.AnyPropertyType).value[0]
-    if win_id == last_seen['xid']:
-        return  # Active window has not changed
+        # Prepare the property names we use so they can be fed into X11 APIs
+        self.net_active_window = self.disp.intern_atom('_NET_ACTIVE_WINDOW')
+        self.net_client_list = self.disp.intern_atom('_NET_CLIENT_LIST')
 
-    last_seen['xid'] = win_id
-    with window_obj(win_id) as new_win:
-        grab_key(new_win)
+        # Listen for _NET_ACTIVE_WINDOW changes
+        self.root.change_attributes(event_mask=Xlib.X.PropertyChangeMask)
+
+    def _bind_existing_windows(self):
+        """Minimize the chance of a window receiving Ctrl+C before focus
+
+        (eg. A Firefox window that was focused before we started)
+        """
+        for xid in self.root.get_full_property(
+                self.net_client_list, X.AnyPropertyType).value:
+            with window_obj(xid, self.disp) as new_win:
+                self.grab_key(new_win)
+
+    def grab_key(self, window):
+        """Grab the undesirable key on the given Windows if it's Firefox"""
+        if not window:
+            return  # Allow null windows for robustness and simple structure
+
+        winclass = window.get_wm_class()
+        if not (winclass and winclass[-1] == self.winclass):
+            return  # Skip non-Firefox windows
+
+        # To avoid the risk of an XID collision allowing data loss via Ctrl+Q,
+        # take advantage of the X server not complaining if we re-grab
+        # something we already grabbed.
+        #
+        # (In my stress tests, re-grabbing like this appears to not have any
+        #  harmful consequences as long as the X11 event queue is allowed to
+        #  flush properly.)
+        for modmask in vary_modmask(self.key[1], (X.Mod2Mask, X.LockMask)):
+            window.grab_key(self.keycode, modmask, 1,
+                            X.GrabModeAsync, X.GrabModeAsync)
+
+    def handle_xevent(self, event):
+        """Handler for X events which aims for minimal overhead"""
+        # Ignore any unwanted events as quickly and efficiently as possible in
+        # concert with setting event_mask.
+        if (event.type != Xlib.X.PropertyNotify or
+                event.atom != self.net_active_window):
+            return
+
+        win_id = self.root.get_full_property(self.net_active_window,
+                                             Xlib.X.AnyPropertyType).value[0]
+        if win_id == self.last_seen:
+            return  # Active window has not changed
+
+        self.last_seen = win_id
+        with window_obj(win_id, self.disp) as new_win:
+            self.grab_key(new_win)
+
+    def run(self):
+        """Main loop"""
+        while True:  # next_event() sleeps until we get an event
+            self.handle_xevent(self.disp.next_event())
 
 if __name__ == '__main__':
-    # Listen for _NET_ACTIVE_WINDOW changes
-    root.change_attributes(event_mask=Xlib.X.PropertyChangeMask)
-
-    # Bind existing windows (eg. in case Firefox is already focused)
-    for xid in root.get_full_property(
-            NET_CLIENT_LIST, X.AnyPropertyType).value:
-        with window_obj(xid) as new_win:
-            grab_key(new_win)
-
-    while True:  # next_event() sleeps until we get an event
-        handle_xevent(disp.next_event())
+    while True:
+        try:
+            app = KeyBlocker()
+            app.run()
+        except Exception as err:  # pylint: disable=broad-except
+            print("Error encountered. Restarting in 1 second.\n\t{}".format(
+                  err))
+            time.sleep(1)

@@ -13,12 +13,10 @@ def vary_modmask(modmask, ignored_list):
     for ignored in chain.from_iterable(combinations(ignored_list, j)
                                        for j in range(len(ignored_list) + 1)):
         imask = reduce(lambda x, y: x | y, ignored, 0)
-        print(imask)
         yield modmask | imask
 
 display = Display()
 root = display.screen().root
-root.change_attributes(event_mask=X.KeyPressMask | X.KeyReleaseMask)
 
 NET_CLIENT_LIST = display.intern_atom('_NET_CLIENT_LIST')
 key = "q"

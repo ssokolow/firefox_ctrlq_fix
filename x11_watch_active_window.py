@@ -48,20 +48,6 @@ def window_obj(win_id):
             pass
     yield window_obj
 
-def get_active_window():
-    """Return a (window_obj, focus_has_changed) tuple for the active window."""
-    win_id = root.get_full_property(NET_ACTIVE_WINDOW,
-                                    Xlib.X.AnyPropertyType).value[0]
-
-    focus_changed = (win_id != last_seen['xid'])
-    if focus_changed:
-        last_seen['xid'] = win_id
-        with window_obj(win_id) as new_win:
-            if new_win:  # TODO: And not already seen
-                pass # TODO: Grab key
-
-    return win_id, focus_changed
-
 def grab_key(window):
     if not window:  # TODO: ...or already seen
         return  # Allow null windows here for robustness and simple structure

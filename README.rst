@@ -44,7 +44,8 @@ finds for all four possible states that the Num Lock and Caps Lock keys may be
 in, and then ignoring the events it receives.
 
 (Num Lock and Caps Lock are modifiers in the same way Ctrl, Alt, and Shift
-are, so Ctrl+NumLock+Q is a different key combo than Ctrl+Q.)
+are, so Ctrl+NumLock+Q is a different key combo than Ctrl+Q at the level X11
+operates at, but programs like Firefox ignore the state of locking modifiers.)
 
 At the moment, it does no "have I seen this window before?" checking for three
 reasons:

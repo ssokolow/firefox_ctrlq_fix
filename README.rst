@@ -1,3 +1,11 @@
+**SUPERCEDED:** This functionality is now acceptably approximated in Firefox
+itself by the "Warn you when quitting the browser" option under
+``Preferences > General > Startup > Restore previous session``.
+
+This repository is retained as an example of how to catch and block a specific
+window from receiving presses from a specific key without interfering with
+other windows.
+
 ==================
 Firefox Ctrl+Q Fix
 ==================

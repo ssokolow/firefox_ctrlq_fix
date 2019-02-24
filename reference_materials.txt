@@ -1,0 +1,13 @@
+Saved browser tabs from this project:
+https://github.com/ssokolow/firefox_ctrlq_fix
+https://bugzilla.mozilla.org/show_bug.cgi?id=1325692
+https://rtbo.github.io/rust-xcb/xcb/
+https://rtbo.github.io/rust-xcb/xcb/ffi/xproto/constant.XCB_MOD_MASK_ANY.html?search=grab_key
+https://rtbo.github.io/rust-xcb/x11/xlib/fn.XKeysymToKeycode.html
+https://github.com/DreaminginCodeZH/xkeymacs/issues/1
+https://github.com/sasawat/firefox-ctrl-q-workaround
+https://stackoverflow.com/questions/9203067/listening-to-keyboard-events-without-trapping-them
+https://stackoverflow.com/questions/18038979/globally-capture-ignore-and-send-keyevents-with-python-xlib-recognize-fake-inp
+https://stackoverflow.com/questions/1147653/python-xlib-catch-send-mouseclick
+https://docs.rs/itertools/0.7.6/itertools/
+
